@@ -47,12 +47,12 @@ module.exports = async (req, res) => {
     }
 
     // Fetch del feed RSS
-    const response = await fetch(feedUrl, {
-      headers: {
-        'User-Agent': 'RSS Reader/1.0 (compatible; NewsAI)'
-      },
-      timeout: 10000 // 10 secondi di timeout
-    });
+  const response = await fetch(feedUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    },
+    timeout: 10000 // 10 secondi di timeout
+  });
 
     // Controlla la risposta
     if (!response.ok) {

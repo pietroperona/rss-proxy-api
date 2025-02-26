@@ -1,0 +1,11 @@
+{
+  "name": "rss-proxy-api",
+  "version": "1.0.0",
+  "description": "Proxy API per feed RSS",
+  "main": "index.js",
+  "dependencies": {
+    "node-fetch": "^2.6.9"
+  },
+  "author": "",
+  "license": "MIT"
+}

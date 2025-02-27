@@ -179,6 +179,26 @@ async function normalizeFeed(xmlData, feedUrl, isDebug) {
   }
 }
 
+// Funzione per normalizzare gli URL delle immagini
+function normalizeImageUrl(url) {
+  if (!url) return '';
+  
+  // Rimuovi spazi e caratteri non validi
+  url = url.trim();
+  
+  // Gestisci URL che iniziano con //
+  if (url.startsWith('//')) {
+    return 'https:' + url;
+  }
+  
+  // Verifica che l'URL abbia un protocollo
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return 'https://' + url;
+  }
+  
+  return url;
+}
+
 // Normalizza feed Atom
 function normalizeAtomFeed(parsedData, feedUrl, isDebug) {
   try {
@@ -226,6 +246,9 @@ function normalizeAtomFeed(parsedData, feedUrl, isDebug) {
           }
         }
       }
+      
+      // Normalizza l'URL dell'immagine
+      imageUrl = normalizeImageUrl(imageUrl);
       
       // Gestione del contenuto e della descrizione
       let content = '';
@@ -313,6 +336,9 @@ function normalizeRssFeed(parsedData, feedUrl, isDebug) {
           imageUrl = imgMatch[1];
         }
       }
+      
+      // Normalizza l'URL dell'immagine
+      imageUrl = normalizeImageUrl(imageUrl);
       
       // Gestione delle categorie
       let categories = [];
@@ -481,18 +507,26 @@ async function tryRssBridgeFallback(feedUrl, res, isDebug) {
       }
       
       // Normalizza la risposta RSSBridge
-      const items = data.items.map(item => ({
-        id: item.uid || item.uri,
-        title: item.title,
-        link: item.uri,
-        content: item.content || '',
-        description: item.content ? item.content.substring(0, 200) + '...' : '',
-        imageUrl: item.enclosures && item.enclosures.length > 0 ? item.enclosures[0] : '',
-        pubDate: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
-        categories: item.categories || [],
-        author: item.author || '',
-        sourceName: data.title || new URL(feedUrl).hostname.replace('www.', '')
-      }));
+      const items = data.items.map(item => {
+        // Estrai e normalizza l'URL dell'immagine dalle enclosures
+        let imageUrl = '';
+        if (item.enclosures && item.enclosures.length > 0) {
+          imageUrl = normalizeImageUrl(item.enclosures[0]);
+        }
+        
+        return {
+          id: item.uid || item.uri,
+          title: item.title,
+          link: item.uri,
+          content: item.content || '',
+          description: item.content ? item.content.substring(0, 200) + '...' : '',
+          imageUrl: imageUrl,
+          pubDate: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
+          categories: item.categories || [],
+          author: item.author || '',
+          sourceName: data.title || new URL(feedUrl).hostname.replace('www.', '')
+        };
+      });
       
       const normalizedData = {
         feedType: 'rssbridge',

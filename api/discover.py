@@ -1,6 +1,6 @@
 from .base import create_app
 import httpx
-from fastapi import Query, HTTPException
+from fastapi import Query, HTTPException, FastAPI
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from bs4 import BeautifulSoup
@@ -12,6 +12,10 @@ from cachetools import TTLCache
 
 # Creazione dell'app FastAPI
 app = create_app()
+
+# Verifica che create_app ritorni un'istanza valida di FastAPI
+if not isinstance(app, FastAPI):
+    raise TypeError("create_app() must return an instance of FastAPI")
 
 # Configurazione
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -283,3 +287,7 @@ async def discover_feeds(url: str = Query(..., description="URL del sito di cui 
 # Adapter per Vercel - necessario per l'integrazione con le funzioni serverless
 from mangum import Mangum
 handler = Mangum(app)
+
+# Verifica che handler sia un'istanza valida di Mangum
+if not isinstance(handler, Mangum):
+    raise TypeError("Mangum(app) must return an instance of Mangum")

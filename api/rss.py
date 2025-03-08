@@ -293,4 +293,6 @@ async def get_rss_feed(
 
 # Adapter per Vercel - necessario per l'integrazione con le funzioni serverless
 from mangum import Mangum
+
+# Ensure the handler is correctly instantiated
 handler = Mangum(app)

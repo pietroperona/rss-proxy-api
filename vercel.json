@@ -3,7 +3,11 @@
   "routes": [
     {
       "src": "/api/discover-py",
-      "dest": "/api/discover.py"
+      "dest": "/api-py/discover.py"
+    },
+    {
+      "src": "/api/discover",
+      "dest": "/api/discover.js"
     },
     {
       "src": "/api/rss",

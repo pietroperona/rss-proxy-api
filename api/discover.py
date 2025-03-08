@@ -221,7 +221,7 @@ def find_feeds_via_known_domains(hostname: str) -> List[FeedInfo]:
     
     return feed_urls
 
-@app.get("/api/discover-py", response_model=DiscoveryResponse)
+@app.get("/discover-py", response_model=DiscoveryResponse)
 async def discover_feeds(url: str = Query(..., description="URL del sito di cui trovare i feed RSS")):
     """
     Trova i feed RSS/Atom disponibili per il sito specificato.

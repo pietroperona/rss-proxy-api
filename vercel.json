@@ -1,13 +1,13 @@
 {
   "version": 2,
   "functions": {
-    "api-python/*.py": {
-      "runtime": "python@3.9"
+    "api/*.py": {
+      "runtime": "python3.9"
     }
   },
   "routes": [
-    { "src": "/api/discover-py", "dest": "/api-python/discover.py" },
-    { "src": "/api/rss-py", "dest": "/api-python/rss.py" },
-    { "src": "/api/image-proxy-py", "dest": "/api-python/image.py" }
+    { "src": "/api/discover-py", "dest": "/api/discover.py" },
+    { "src": "/api/rss-py", "dest": "/api/rss.py" },
+    { "src": "/api/image-proxy-py", "dest": "/api/image.py" }
   ]
 }

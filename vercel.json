@@ -2,8 +2,16 @@
   "version": 2,
   "routes": [
     {
+      "src": "/api/discover-py",
+      "dest": "/api/discover.py"
+    },
+    {
       "src": "/api/rss",
       "dest": "/api/rss.js"
+    },
+    {
+      "src": "/api/image-proxy",
+      "dest": "/api/image-proxy.js"
     }
   ]
 }

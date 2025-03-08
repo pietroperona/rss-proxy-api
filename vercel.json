@@ -1,9 +1,9 @@
 {
   "version": 2,
   "routes": [
-    {
-      "src": "/api/discover-py",
-      "dest": "/api-py/discover.py"
+    { 
+      "src": "/api/discover-py", 
+      "dest": "/api-py/index.py" 
     },
     {
       "src": "/api/discover",

@@ -1,13 +1,7 @@
 {
-  "version": 2,
   "functions": {
     "api/**/*.py": {
-      "runtime": "vercel-python@latest"
+      "runtime": "python3.12"
     }
-  },
-  "routes": [
-    { "src": "/api/discover-py", "dest": "api/discover.py" },
-    { "src": "/api/rss-py", "dest": "api/rss.py" },
-    { "src": "/api/image-proxy-py", "dest": "api/image.py" }
-  ]
+  }
 }

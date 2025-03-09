@@ -1,0 +1,13 @@
+{
+    "version": 2,
+    "functions": {
+      "api/*.py": {
+        "runtime": "python3.12"
+      }
+    },
+    "routes": [
+      { "src": "/api/discover", "dest": "/api/discover.py" },
+      { "src": "/api/rss", "dest": "/api/rss.py" },
+      { "src": "/api/image-proxy", "dest": "/api/image.py" }
+    ]
+  }

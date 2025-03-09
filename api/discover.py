@@ -1,29 +1,30 @@
-from .base import create_app
+from fastapi import FastAPI, Query, HTTPException
+from pydantic import BaseModel
+from typing import List
 import httpx
-from fastapi import Query, HTTPException, FastAPI
-from pydantic import BaseModel, Field
-from typing import List, Optional
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin
-import re
+from urllib.parse import urlparse
+from mangum import Mangum
 import time
-import asyncio
 from cachetools import TTLCache
 
 # Creazione dell'app FastAPI
-app = create_app()
+app = FastAPI()
 
-# Verifica che create_app ritorni un'istanza valida di FastAPI
-if not isinstance(app, FastAPI):
-    raise TypeError("create_app() must return an instance of FastAPI")
+# Aggiunta middleware CORS
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configurazione
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 TIMEOUT = 10.0  # secondi
-
-# Cache con TTL (Time To Live)
-# Memorizza fino a 500 risultati per 24 ore
-discovery_cache = TTLCache(maxsize=500, ttl=24*60*60)
+discovery_cache = TTLCache(maxsize=500, ttl=24*60*60)  # 24 ore di cache
 
 # Domini noti con feed RSS
 KNOWN_DOMAINS = {
@@ -33,261 +34,135 @@ KNOWN_DOMAINS = {
     'ansa.it': 'https://www.ansa.it/sito/notizie/tecnologia/tecnologia_rss.xml',
     'corriere.it': 'https://xml2.corriereobjects.it/rss/homepage.xml',
     'gazzetta.it': 'https://www.gazzetta.it/rss/home.xml',
-    'tomshw.it': 'https://www.tomshw.it/feed/',
-    'nytimes.com': 'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
-    'theverge.com': 'https://www.theverge.com/rss/index.xml',
-    'bbc.co.uk': 'http://feeds.bbci.co.uk/news/world/rss.xml'
+    'tomshw.it': 'https://www.tomshw.it/feed/'
 }
 
-# Modelli di dati Pydantic
+# Modelli Pydantic
 class FeedInfo(BaseModel):
-    """Modello per rappresentare le informazioni di un feed RSS/Atom"""
-    url: str = Field(..., description="URL completo del feed")
-    source: str = Field(..., description="Metodo di discovery usato")
-    title: str = Field(..., description="Titolo del feed se disponibile")
+    url: str
+    source: str
+    title: str
 
 class DiscoveryResponse(BaseModel):
-    """Modello di risposta per l'endpoint di discovery"""
-    feeds: List[FeedInfo] = Field(..., description="Lista dei feed trovati")
-    site: str = Field(..., description="URL base del sito analizzato")
+    feeds: List[FeedInfo]
+    site: str
+
+@app.get("/api/discover")
+async def discover_feeds(url: str = Query(...)):
+    """Trova feed RSS/Atom per un dato URL di sito web"""
+    # Normalizza l'URL
+    normalized_url = url.strip()
+    if not normalized_url.startswith('http'):
+        normalized_url = 'https://' + normalized_url
+    
+    # Estrai il dominio base
+    parsed_url = urlparse(normalized_url)
+    hostname = parsed_url.hostname
+    site_root = f"{parsed_url.scheme}://{hostname}"
+    
+    # Controlla la cache
+    cache_key = site_root
+    if cache_key in discovery_cache:
+        return {"feeds": discovery_cache[cache_key], "site": site_root}
+    
+    try:
+        # Trova i feed
+        all_feeds = []
+        
+        # 1. Prova l'autodiscovery
+        autodiscovery_feeds = await find_feeds_via_autodiscovery(site_root, hostname)
+        all_feeds.extend(autodiscovery_feeds)
+        
+        # 2. Se l'autodiscovery fallisce, prova i percorsi comuni
+        if len(all_feeds) == 0:
+            common_paths_feeds = await find_feeds_via_common_paths(site_root, hostname)
+            all_feeds.extend(common_paths_feeds)
+        
+        # 3. Se ancora nessun feed, prova i domini noti
+        if len(all_feeds) == 0:
+            known_domain_feeds = find_feeds_via_known_domains(hostname)
+            all_feeds.extend(known_domain_feeds)
+        
+        # Aggiorna la cache e restituisci
+        feeds_dicts = [feed.dict() for feed in all_feeds]
+        discovery_cache[cache_key] = feeds_dicts
+        return {"feeds": feeds_dicts, "site": site_root}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nella ricerca dei feed: {str(e)}")
 
 async def find_feeds_via_autodiscovery(site_root: str, hostname: str) -> List[FeedInfo]:
-    """
-    Trova i feed RSS/Atom tramite autodiscovery analizzando i tag <link> nella home page.
-    
-    Args:
-        site_root: URL base del sito (es. https://wired.it)
-        hostname: Nome host estratto dall'URL (es. wired.it)
-        
-    Returns:
-        Lista di oggetti FeedInfo trovati
-    """
+    """Trova feed usando i tag <link> nella home page"""
     feed_urls = []
-    common_feed_identifiers = [
-        'application/rss+xml',
-        'application/atom+xml',
-        'application/feed+json',
-        'application/rss',
-        'application/xml',
-        'text/xml'
-    ]
-
     try:
-        print(f"Controllando l'autodiscovery sulla home page: {site_root}")
-        
-        headers = {
-            'User-Agent': USER_AGENT,
-            'Accept': 'text/html',
-            'Cache-Control': 'no-cache'
-        }
-        
         async with httpx.AsyncClient(timeout=TIMEOUT, verify=False) as client:
-            response = await client.get(site_root, headers=headers)
+            response = await client.get(site_root, headers={'User-Agent': USER_AGENT})
             
             if response.status_code == 200:
-                html = response.text
-                soup = BeautifulSoup(html, 'lxml')
+                soup = BeautifulSoup(response.text, 'html.parser')
                 
-                # Cerca i tag link con rel="alternate" che puntano a feed
                 for link in soup.find_all('link', rel=lambda r: r and ('alternate' in r.lower() or 'feed' in r.lower())):
-                    link_type = link.get('type', '')
-                    if any(ident in link_type for ident in common_feed_identifiers):
-                        feed_url = link.get('href')
-                        if feed_url:
-                            # Risolvi URL relativi
-                            if feed_url.startswith('/'):
-                                feed_url = site_root + feed_url
-                            elif not feed_url.startswith('http'):
-                                feed_url = site_root + '/' + feed_url
-                            
-                            # Ottieni il titolo se disponibile
-                            title = link.get('title', f'Feed di {hostname}')
-                            
-                            feed_urls.append(FeedInfo(
-                                url=feed_url,
-                                source='autodiscovery',
-                                title=title
-                            ))
-                
-                print(f"Trovati {len(feed_urls)} feed tramite autodiscovery")
-    except Exception as e:
-        print(f"Errore durante l'autodiscovery: {str(e)}")
+                    if link.get('type') and any(x in link['type'] for x in ['rss', 'atom', 'xml']):
+                        feed_url = link.get('href', '')
+                        
+                        # Risolvi URL relativi
+                        if feed_url.startswith('/'):
+                            feed_url = site_root + feed_url
+                        elif not feed_url.startswith('http'):
+                            feed_url = site_root + '/' + feed_url
+                        
+                        title = link.get('title', f'Feed di {hostname}')
+                        feed_urls.append(FeedInfo(url=feed_url, source='autodiscovery', title=title))
+    except Exception:
+        pass
     
     return feed_urls
 
 async def find_feeds_via_common_paths(site_root: str, hostname: str) -> List[FeedInfo]:
-    """
-    Trova i feed RSS/Atom provando percorsi comuni.
-    
-    Args:
-        site_root: URL base del sito (es. https://wired.it)
-        hostname: Nome host estratto dall'URL (es. wired.it)
-        
-    Returns:
-        Lista di oggetti FeedInfo trovati
-    """
+    """Trova feed verificando percorsi RSS comuni"""
     feed_urls = []
-    possible_paths = [
-        '/feed',            # Percorso comune
-        '/rss',             # Percorso comune
-        '/feed/rss',        # Wired, WordPress
-        '/rss/index.xml',   # The Verge
-        '/atom',            # Atom feed
-        '/rss.xml',         # Percorso comune
-        '/feed.xml',        # Percorso comune
-        '/feeds/posts/default', # Blogger
-        '/rssfeeds/',       # Alcuni siti di news
-        '/index.xml',       # Hugo e altri generatori statici
-        '/feed/atom',       # Atom alternativo
-        '/atom.xml'         # Atom alternativo
+    common_paths = [
+        '/feed',
+        '/rss',
+        '/feed/rss',
+        '/rss.xml',
+        '/feed.xml',
+        '/atom.xml',
+        '/index.xml'
     ]
     
-    print('Tentativo con percorsi comuni...')
-    
-    headers = {
-        'User-Agent': USER_AGENT,
-        'Accept': 'application/xml, application/rss+xml, application/atom+xml'
-    }
-    
-    # Crea un elenco di task per verificare tutti i percorsi in parallelo
     async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
-        tasks = []
-        for path in possible_paths:
-            test_url = site_root + path
-            tasks.append(check_feed_url(client, test_url, path, hostname))
-        
-        # Esegui tutte le richieste in parallelo e raccogli i risultati
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Filtra i risultati validi (escludendo eccezioni)
-        for result in results:
-            if isinstance(result, FeedInfo):
-                feed_urls.append(result)
+        for path in common_paths:
+            try:
+                test_url = site_root + path
+                response = await client.head(test_url, headers={'User-Agent': USER_AGENT})
+                
+                if response.status_code == 200:
+                    content_type = response.headers.get('content-type', '')
+                    if any(x in content_type.lower() for x in ['xml', 'rss', 'atom']):
+                        feed_urls.append(FeedInfo(
+                            url=test_url, 
+                            source='common_path',
+                            title=f'Feed di {hostname}'
+                        ))
+            except Exception:
+                continue
     
     return feed_urls
 
-async def check_feed_url(client, url: str, path: str, hostname: str) -> Optional[FeedInfo]:
-    """
-    Verifica se un URL specifico contiene un feed valido.
-    
-    Args:
-        client: httpx.AsyncClient per effettuare la richiesta
-        url: URL da verificare
-        path: Percorso relativo del feed (usato per il titolo)
-        hostname: Nome host estratto dall'URL
-        
-    Returns:
-        FeedInfo se il feed è valido, None altrimenti o in caso di errore
-    """
-    try:
-        # Usa head request per verificare solo l'esistenza e il content-type
-        response = await client.head(url)
-        
-        if response.status_code == 200:
-            content_type = response.headers.get('content-type', '')
-            if any(x in content_type.lower() for x in ['xml', 'rss', 'atom', 'feed']):
-                return FeedInfo(
-                    url=url,
-                    source='common_path',
-                    title=f'Feed di {hostname} ({path})'
-                )
-    except Exception:
-        # Ignora gli errori, semplicemente non aggiungiamo questo feed
-        pass
-    
-    return None
-
 def find_feeds_via_known_domains(hostname: str) -> List[FeedInfo]:
-    """
-    Trova i feed RSS basati su domini noti in un database predefinito.
-    
-    Args:
-        hostname: Nome host estratto dall'URL (es. wired.it)
-        
-    Returns:
-        Lista di oggetti FeedInfo trovati
-    """
+    """Trova feed basati su mappature di domini noti"""
     feed_urls = []
     
-    print('Tentativo con domini noti...')
-    
-    for domain, known_url in KNOWN_DOMAINS.items():
+    for domain, feed_url in KNOWN_DOMAINS.items():
         if domain in hostname:
             feed_urls.append(FeedInfo(
-                url=known_url,
+                url=feed_url,
                 source='known_domain',
                 title=f'Feed di {domain}'
             ))
     
     return feed_urls
 
-@app.get("/discover-py", response_model=DiscoveryResponse)
-async def discover_feeds(url: str = Query(..., description="URL del sito di cui trovare i feed RSS")):
-    """
-    Trova i feed RSS/Atom disponibili per il sito specificato.
-    
-    La ricerca avviene in tre fasi:
-    1. Autodiscovery tramite tag <link> nella home page
-    2. Tentativo con percorsi comuni
-    3. Ricerca in un database di domini noti
-    
-    Args:
-        url: URL del sito di cui trovare i feed (es. wired.it)
-        
-    Returns:
-        Oggetto DiscoveryResponse con i feed trovati e l'URL del sito
-    """
-    # Normalizza l'URL
-    if not url.startswith('http'):
-        url = 'https://' + url
-    
-    # Estrai il dominio base
-    parsed_url = urlparse(url)
-    hostname = parsed_url.hostname
-    site_root = f"{parsed_url.scheme}://{hostname}"
-    
-    # Verifica la cache
-    cache_key = site_root
-    if cache_key in discovery_cache:
-        print(f"Servendo {site_root} dalla cache")
-        cached_feeds = discovery_cache[cache_key]
-        return DiscoveryResponse(feeds=cached_feeds, site=site_root)
-    
-    # Inizia la ricerca dei feed
-    all_feeds = []
-    
-    # 1. Prova l'autodiscovery sulla home page
-    feeds_from_autodiscovery = await find_feeds_via_autodiscovery(site_root, hostname)
-    all_feeds.extend(feeds_from_autodiscovery)
-    
-    # 2. Se l'autodiscovery fallisce, prova i percorsi comuni
-    if len(all_feeds) == 0:
-        feeds_from_common_paths = await find_feeds_via_common_paths(site_root, hostname)
-        all_feeds.extend(feeds_from_common_paths)
-    
-    # 3. Se ancora non abbiamo feed, prova con i domini noti
-    if len(all_feeds) == 0:
-        feeds_from_known_domains = find_feeds_via_known_domains(hostname)
-        all_feeds.extend(feeds_from_known_domains)
-    
-    # Elimina duplicati in base all'URL
-    unique_feeds = []
-    seen_urls = set()
-    for feed in all_feeds:
-        if feed.url not in seen_urls:
-            seen_urls.add(feed.url)
-            unique_feeds.append(feed)
-    
-    # Aggiorna la cache
-    discovery_cache[cache_key] = unique_feeds
-    
-    # Restituisci i feed trovati
-    return DiscoveryResponse(feeds=unique_feeds, site=site_root)
-
-# Adapter per Vercel - necessario per l'integrazione con le funzioni serverless
-from mangum import Mangum
+# Crea l'handler per la funzione serverless di Vercel
 handler = Mangum(app)
-
-# Verifica che handler sia un'istanza valida di Mangum
-if not isinstance(handler, Mangum):
-    raise TypeError("Mangum(app) must return an instance of Mangum")

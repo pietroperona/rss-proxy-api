@@ -1,10 +1,11 @@
 fastapi==0.109.0
+uvicorn==0.20.0
 httpx==0.26.0
 beautifulsoup4==4.12.2
 lxml==4.9.3
 pydantic==2.5.2
 python-multipart==0.0.6
-Pillow==10.1.0
+pillow==10.1.0
 cachetools==5.3.2
 mangum==0.17.0
 feedparser==6.0.10

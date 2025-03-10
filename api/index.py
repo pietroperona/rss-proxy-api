@@ -13,6 +13,18 @@ import time
 # Crea l'app FastAPI
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    """Route principale per il debug"""
+    return {
+        "message": "API RSS funzionante",
+        "endpoints": [
+            "/api/discover?url=...",
+            "/api/rss?url=...",
+            "/api/image-proxy?url=..."
+        ]
+    }
+
 # Configurazione
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 TIMEOUT = 15.0  # secondi
@@ -29,7 +41,7 @@ KNOWN_DOMAINS = {
     'tomshw.it': 'https://www.tomshw.it/feed/'
 }
 
-@app.get("/api/discover")
+@app.get("/discover")
 async def discover_feeds(url: str = Query(..., description="URL del sito di cui trovare i feed RSS")):
     """Trova feed RSS/Atom per un dato URL di sito web"""
     # Normalizza l'URL
@@ -61,7 +73,7 @@ async def discover_feeds(url: str = Query(..., description="URL del sito di cui 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore nella ricerca dei feed: {str(e)}")
 
-@app.get("/api/rss")
+@app.get("/rss")
 async def get_rss_feed(
     url: str = Query(..., description="URL del feed RSS/Atom"),
     debug: bool = Query(False, description="Modalità debug"),
@@ -116,7 +128,7 @@ async def get_rss_feed(
         # Feed non riconosciuto
         raise HTTPException(status_code=404, detail="Feed non trovato o non supportato")
 
-@app.get("/api/image-proxy")
+@app.get("/image-proxy")
 async def proxy_image(
     url: str = Query(..., description="URL dell'immagine da proxare"),
     width: Optional[int] = Query(None, description="Larghezza desiderata"),

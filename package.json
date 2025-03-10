@@ -1,17 +1,5 @@
 {
-  "name": "rss-proxy-api",
-  "version": "1.0.0",
-  "description": "Proxy API per feed RSS e immagini",
-  "main": "index.js",
-  "dependencies": {
-    "node-fetch": "^2.6.9",
-    "xml2js": "^0.6.2",
-    "https-proxy-agent": "^7.0.2",
-    "sharp": "^0.32.1"
-  },
-  "scripts": {
-    "start": "node index.js"
-  },
-  "author": "",
-  "license": "MIT"
+  "engines": {
+    "node": "18.x"
+  }
 }

@@ -1,10 +1,7 @@
 {
-    "version": 2,
-    "functions": {
-      "api/*.py": {
-        "runtime": "@vercel/python@3.12"
-      }
-    },
+    "builds": [
+      { "src": "api/*.py", "use": "@vercel/python" }
+    ],
     "routes": [
       { "src": "/api/discover", "dest": "/api/discover.py" },
       { "src": "/api/rss", "dest": "/api/rss.py" },

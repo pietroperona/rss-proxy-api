@@ -47,7 +47,7 @@ class DiscoveryResponse(BaseModel):
     feeds: List[FeedInfo]
     site: str
 
-@app.get("/api/discover")
+@app.get("/")
 async def discover_feeds(url: str = Query(...)):
     """Trova feed RSS/Atom per un dato URL di sito web"""
     # Normalizza l'URL
